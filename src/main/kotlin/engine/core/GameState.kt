@@ -18,5 +18,10 @@ enum class GameState {
     /**
      * Il giocatore è nel mondo 3D, muove la telecamera.
      */
-    PLAYING
+    PLAYING,
+    
+    /**
+     * Il gioco è in pausa (mostra il menu con le opzioni)
+     */
+    PAUSED
 }

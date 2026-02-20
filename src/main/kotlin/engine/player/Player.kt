@@ -19,10 +19,15 @@ class Player(private val world: World) {
     var yaw = -90f   // Rotazione sinistra/destra. -90 gradi = asse Z negativo
     var pitch = 0f   // Rotazione su/giù
     
-    // Parametri di movimento
-    private val walkSpeed = 5f      // Velocità in unità al secondo
-    private val sensitivity = 0.15f // Sensibilità del mouse
-    private val playerHeight = 1.6f // Altezza degli occhi del giocatore rispetto ai piedi
+    // --- VARIABILI FISICHE ---
+    private var velocityY = 0f
+    private val gravity = 25f     // Accelerazione di gravità
+    private val jumpForce = 8f    // Forza del salto
+    private var isGrounded = false
+
+    // Impostazioni (poi le collegheremo stabilmente alla UI, per ora campi modificabili)
+    var walkSpeed = 5f      // Velocità in unità al secondo
+    var sensitivity = 0.15f // Sensibilità del mouse
     
     // Matrici per OpenGL
     val viewMatrix = Matrix4f()
@@ -39,7 +44,8 @@ class Player(private val world: World) {
         viewMatrix.identity()
             .rotateX(Math.toRadians(pitch.toDouble()).toFloat())
             .rotateY(Math.toRadians(yaw.toDouble()).toFloat())
-            .translate(-position.x, -position.y, -position.z)
+            .translate(-position.x, -position.y - playerHeight, -position.z)
+            // Modifica: ora la 'position' indica i PIEDI del giocatore. Trasliamo la visuale in alto di 'playerHeight'
     }
 
     /**
@@ -48,49 +54,92 @@ class Player(private val world: World) {
      */
     fun handleInput(window: Long, deltaTime: Float) {
         // --- CALCOLO VETTORI DIREZIONALI ---
-        // front (dove guardiamo fisicamente sull'asse orizzontale)
         val yawRad = Math.toRadians(yaw.toDouble())
 
-        // Usiamo la vera formula vettoriale per ottenere "avanti / dietro"
-        val frontX = cos(yawRad).toFloat()
-        val frontZ = sin(yawRad).toFloat()
+        // Usiamo la vera formula per ottenere "avanti / dietro" rispetto alla telecamera in OpenGL
+        val frontX = sin(yawRad).toFloat()
+        val frontZ = -cos(yawRad).toFloat()
 
-        // Calcoliamo "destra / sinistra" ruotando il vettore 'front' di 90 gradi.
-        // E' matematicamente definito come sin per X e -cos per Z.
-        val rightX = sin(yawRad).toFloat()
-        val rightZ = -cos(yawRad).toFloat()
+        // Calcoliamo "destra / sinistra" 
+        val rightX = cos(yawRad).toFloat()
+        val rightZ = sin(yawRad).toFloat()
         
         val velocity = walkSpeed * deltaTime
 
-        // --- APPLICAZIONE MOVIMENTO LOGICO ---
-        // WASD: Avanti/Dietro usa i vettori Front. Destra/Sinistra usa i vettori Right.
+        // --- APPLICAZIONE MOVIMENTO LOGICO (X/Z) ---
+        var moveX = 0f
+        var moveZ = 0f
+
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            position.x += frontX * velocity
-            position.z += frontZ * velocity
+            moveX += frontX * velocity
+            moveZ += frontZ * velocity
         }
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            position.x -= frontX * velocity
-            position.z -= frontZ * velocity
+            moveX -= frontX * velocity
+            moveZ -= frontZ * velocity
         }
         
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            position.x += rightX * velocity
-            position.z += rightZ * velocity
+            moveX += rightX * velocity
+            moveZ += rightZ * velocity
         }
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            position.x -= rightX * velocity
-            position.z -= rightZ * velocity
+            moveX -= rightX * velocity
+            moveZ -= rightZ * velocity
+        }
+
+        // --- GESTIONE GRAVITA E SALTO (Y) ---
+        if (isGrounded && glfwGetKey(window, GLFW_SPACE) == GLFW_PRESS) {
+            velocityY = jumpForce
+            isGrounded = false
+        }
+
+        velocityY -= gravity * deltaTime
+        var moveY = velocityY * deltaTime
+
+        // --- APPLICAZIONE COLLISIONI RUDIMENTALI ---
+        // Prima controlliamo X
+        position.x += moveX
+        if (isColliding(position.x, position.y + 0.1f, position.z) || isColliding(position.x, position.y + playerHeight - 0.1f, position.z)) {
+            position.x -= moveX // Annulla movimento se entri in un blocco
+        }
+
+        // Poi controlliamo Z
+        position.z += moveZ
+        if (isColliding(position.x, position.y + 0.1f, position.z) || isColliding(position.x, position.y + playerHeight - 0.1f, position.z)) {
+            position.z -= moveZ // Annulla
+        }
+
+        // Poi controlliamo Y (verticale)
+        position.y += moveY
+        isGrounded = false
+
+        // Controllo collisione verso il Basso (Piedi)
+        if (moveY < 0 && isColliding(position.x, position.y, position.z)) {
+            // L'altezza y intera (sotto)
+            position.y = Math.ceil(position.y.toDouble()).toFloat()
+            velocityY = 0f
+            isGrounded = true
+        }
+        // Controllo collisione verso l'Alto (Testa)
+        else if (moveY > 0 && isColliding(position.x, position.y + playerHeight, position.z)) {
+            position.y = Math.floor((position.y + playerHeight).toDouble()).toFloat() - playerHeight
+            velocityY = 0f
         }
         
-        // --- COLLISIONE CON IL TERRENO (GRAVITA') ---
-        // Ora leggiamo l'altezza dal nostro World in quel punto esatto.
-        // Siccome il nostro generatore restituisce Y pieno del terreno,
-        // andiamo a spawnare gli occhi ad altezza: terreno + playerHeight.
-        val groundY = world.getGroundHeight(position.x, position.z).toFloat()
-        val targetY = groundY + playerHeight
-        
-        // Applica l'altezza forzata del terreno
-        position.y = targetY
+        // Failsafe in caso esca dalla mappa o dal limite inferiore (Void)
+        if (position.y < -10f) {
+            position.y = 50f
+            velocityY = 0f
+        }
+    }
+
+    /**
+     * Helper per controllare se un punto interseca un blocco solido nel mondo.
+     */
+    private fun isColliding(x: Float, y: Float, z: Float): Boolean {
+        // Blocco id 0 = Aria. Tutto il resto al momento è solido.
+        return world.getBlockAt(x, y, z).toInt() != 0
     }
 
     /**

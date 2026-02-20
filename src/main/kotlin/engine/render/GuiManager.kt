@@ -46,6 +46,7 @@ class GuiManager(private val windowId: Long, private val engine: KotVox) {
             GameState.MAIN_MENU -> drawMainMenu()
             GameState.MOD_SCREEN -> drawModScreen()
             GameState.PLAYING -> drawHud()
+            GameState.PAUSED -> drawPauseMenu()
         }
     }
 
@@ -133,5 +134,65 @@ class GuiManager(private val windowId: Long, private val engine: KotVox) {
     private fun drawHud() {
         // Un semplice HUD testuale (come in Minecraft in alto a sinistra, se vuoi, sennò F3 basta).
         // Per ora lo lasciamo vuoto, perché usiamo lo stato title per il debug o log
+    }
+
+    private var showSettings = false
+    
+    // Variabili temporanee per le impostazioni globali
+    private val uiWalkSpeed = FloatArray(1) { 5.0f }
+    private val uiSensitivity = FloatArray(1) { 0.15f }
+
+    private fun drawPauseMenu() {
+        ImGui.setNextWindowPos(1280f / 2 - 150f, 720f / 2 - 150f)
+        ImGui.setNextWindowSize(300f, 300f)
+        
+        val flags = ImGuiWindowFlags.NoCollapse or ImGuiWindowFlags.NoResize or ImGuiWindowFlags.NoMove or ImGuiWindowFlags.NoSavedSettings
+        
+        if (ImGui.begin("Menu di Pausa", flags)) {
+            if (!showSettings) {
+                ImGui.spacing(); ImGui.spacing(); ImGui.spacing()
+                
+                ImGui.setCursorPosX(50f)
+                if (ImGui.button("Riprendi Gioco", 200f, 30f)) {
+                    engine.changeState(GameState.PLAYING)
+                }
+
+                ImGui.spacing()
+                ImGui.setCursorPosX(50f)
+                if (ImGui.button("Impostazioni", 200f, 30f)) {
+                    showSettings = true
+                }
+
+                ImGui.spacing()
+                ImGui.setCursorPosX(50f)
+                if (ImGui.button("Torna al Menu Principale", 200f, 30f)) {
+                    engine.changeState(GameState.MAIN_MENU)
+                }
+            } else {
+                ImGui.text("Impostazioni Giocatore")
+                ImGui.spacing()
+                
+                // Leggiamo i valori attuali dal player
+                val player = engine.getPlayer()
+                uiSensitivity[0] = player.sensitivity
+                uiWalkSpeed[0] = player.walkSpeed
+
+                if (ImGui.sliderFloat("Sensibilita' Mouse", uiSensitivity, 0.01f, 1.0f)) {
+                    player.sensitivity = uiSensitivity[0]
+                }
+                if (ImGui.sliderFloat("Velocita' Corsa", uiWalkSpeed, 1.0f, 20.0f)) {
+                    player.walkSpeed = uiWalkSpeed[0]
+                }
+                
+                ImGui.spacing(); ImGui.spacing()
+                
+                ImGui.setCursorPosX(50f)
+                ImGui.setCursorPosY(250f)
+                if (ImGui.button("Indietro", 200f, 30f)) {
+                    showSettings = false
+                }
+            }
+        }
+        ImGui.end()
     }
 }

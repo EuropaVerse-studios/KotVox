@@ -44,6 +44,8 @@ class KotVox {
     private val world = World()
     private val player = Player(world)
     
+    fun getPlayer(): Player = player
+    
     // Gestione Stati e Interfaccia Utente
     var currentState = GameState.MAIN_MENU
         private set
@@ -110,9 +112,13 @@ class KotVox {
 
         glfwSetKeyCallback(window) { window, key, scancode, action, mods ->
             if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
-                // Se stiamo giocando, ESC riapre il menu base
+                // Se stiamo giocando, ESC apre il menu di pausa
                 if (currentState == GameState.PLAYING) {
-                    changeState(GameState.MAIN_MENU)
+                    changeState(GameState.PAUSED)
+                }
+                // Se siamo in pausa, ESC chiude il menu e riprende
+                else if (currentState == GameState.PAUSED) {
+                    changeState(GameState.PLAYING)
                 }
             }
             
@@ -137,6 +143,7 @@ class KotVox {
         }
 
         glfwMakeContextCurrent(window)
+        GL.createCapabilities()
         glfwSwapInterval(1)
         glfwShowWindow(window)
 
@@ -165,8 +172,6 @@ class KotVox {
                 player.handleMouseInput(dx, dy)
             }
         }
-
-        GL.createCapabilities()
 
         // Carica gli shader
         val vert = File("src/main/resources/shader.vert").readText()
@@ -231,10 +236,12 @@ class KotVox {
             glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
             // --- FASE 1: GIOCO 3D ---
-            if (currentState == GameState.PLAYING) {
-                performance.update(window)
-                player.handleInput(window, deltaTime)
-                player.updateViewMatrix()
+            if (currentState == GameState.PLAYING || currentState == GameState.PAUSED) {
+                if (currentState == GameState.PLAYING) {
+                    performance.update(window)
+                    player.handleInput(window, deltaTime)
+                    player.updateViewMatrix()
+                }
 
                 if (isDebugMenuOpen) {
                     val pos = player.position
